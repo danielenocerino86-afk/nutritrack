@@ -48,7 +48,35 @@ const GOL=[{id:"lose",l:"Perdere peso",e:"🍃"},{id:"maintain",l:"Mantenere",e:
 /* ── Data migration: read from any previous key, write to nt6 ── */
 const SK="nt6";
 const defP=()=>({name:"",sex:"",birthDate:"",height:null,weight:null,goal:"",activityLevel:"",targetWeight:null,allergies:"",waterGoal:8,onboarded:false,nutri:{name:"",phone:"",email:"",address:"",nextAppt:"",notes:""}});
-const defD=()=>({profile:defP(),dietType:null,dietSchema:null,weeklyPlan:{},mealPlans:{},weightLog:[],measurements:[],water:{},mealChecks:{},activities:[],diary:{},shoppingChecks:{}});
+const defD=()=>({profile:defP(),dietType:null,dietSchema:null,weeklyPlan:{},mealPlans:{},weightLog:[],measurements:[],biaLog:[],water:{},mealChecks:{},activities:[],diary:{},shoppingChecks:{}});
+/* BIA fields definition */
+const BIA_F=[
+  {k:"massaGrassa",l:"Massa Grassa",u:"kg",c:"var(--er)",icon:"🔴"},
+  {k:"massaGrassaPct",l:"Massa Grassa %",u:"%",c:"var(--er)",icon:"📊"},
+  {k:"massaMagra",l:"Massa Magra",u:"kg",c:"var(--ac)",icon:"🟢"},
+  {k:"massaMagraPct",l:"Massa Magra %",u:"%",c:"var(--ac)",icon:"📊"},
+  {k:"massaMuscolare",l:"Massa Muscolare",u:"kg",c:"var(--sage)",icon:"💪"},
+  {k:"massaMuscolPct",l:"Massa Muscolare %",u:"%",c:"var(--sage)",icon:"📊"},
+  {k:"massaCellulare",l:"Massa Cellulare",u:"kg",c:"var(--water)",icon:"🔵"},
+  {k:"massaCellPct",l:"Massa Cellulare %",u:"%",c:"var(--water)",icon:"📊"},
+  {k:"acquaTotale",l:"Acqua Totale",u:"lt",c:"var(--water)",icon:"💧"},
+  {k:"acquaTotPct",l:"Acqua Totale %",u:"%",c:"var(--water)",icon:"📊"},
+  {k:"acquaExtra",l:"Acqua Extracellulare",u:"lt",c:"#7eafc9",icon:"💧"},
+  {k:"acquaExtraPct",l:"Acqua Extra %",u:"%",c:"#7eafc9",icon:"📊"},
+  {k:"acquaIntra",l:"Acqua Intracellulare",u:"lt",c:"#5a8eae",icon:"💧"},
+  {k:"acquaIntraPct",l:"Acqua Intra %",u:"%",c:"#5a8eae",icon:"📊"},
+  {k:"naK",l:"Na/K Scambiabile",u:"",c:"var(--wa)",icon:"⚡"},
+  {k:"bmrBia",l:"Metabolismo Basale",u:"kcal",c:"var(--wa)",icon:"🔥"},
+  {k:"bmiBia",l:"BMI",u:"",c:"var(--terra)",icon:"📐"},
+  {k:"bcmi",l:"BCMI",u:"",c:"var(--sage)",icon:"📐"},
+  {k:"angoloFase",l:"Angolo di Fase",u:"°",c:"var(--ac)",icon:"📐"},
+  {k:"resistenza",l:"Resistenza",u:"ohm",c:"var(--tx2)",icon:"⚡"},
+  {k:"reattanza",l:"Reattanza",u:"ohm",c:"var(--tx2)",icon:"⚡"},
+];
+/* Key BIA metrics to show in summary cards */
+const BIA_SUMMARY=["massaGrassa","massaGrassaPct","massaMagra","massaMuscolare","acquaTotale","angoloFase","bmrBia"];
+/* Key BIA metrics to chart */
+const BIA_CHARTS=["massaGrassa","massaMagra","massaMuscolare","acquaTotale","angoloFase","massaGrassaPct"];
 function loadData(){
   try{
     /* Try current key first */
@@ -180,6 +208,7 @@ function exportXls(data){
   const allM=[];Object.entries(data.mealPlans).forEach(([d,ms])=>ms.forEach(m=>allM.push({Data:d,Pasto:m.mealType,Alimenti:m.food})));if(allM.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(allM),"Pasti");
   const wE=Object.entries(data.water).map(([d,v])=>({Data:d,Bicchieri:v}));if(wE.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(wE),"Acqua");
   if(data.activities.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.activities.map(a=>({Data:a.date,"Attività":a.activity,"Durata (min)":parseInt(a.duration)||0}))),"Attività");
+  if((data.biaLog||[]).length){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet((data.biaLog||[]).map(b=>{const r={Data:b.date};BIA_F.forEach(f=>{if(b[f.k])r[f.l+(f.u?" ("+f.u+")":"")]=parseFloat(b[f.k]);});return r;})),"BIA");}
   if(data.dietSchema){const rows=[];Object.entries(data.dietSchema.meals).forEach(([meal,d])=>{rows.push({Pasto:meal,Categoria:"",Alimento:""});d.items.forEach(it=>rows.push({Pasto:"",Categoria:"",Alimento:it.text}));Object.entries(d.subs).forEach(([sub,its])=>{rows.push({Pasto:"",Categoria:sub,Alimento:""});its.forEach(it=>rows.push({Pasto:"",Categoria:"",Alimento:it.text}));});});if(rows.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),"Schema Dieta");}
   const prof=[{Campo:"Nome",Valore:p.name},{Campo:"Sesso",Valore:p.sex==="M"?"Maschio":"Femmina"},{Campo:"Nascita",Valore:p.birthDate},{Campo:"Altezza",Valore:p.height+" cm"},{Campo:"Peso iniziale",Valore:p.weight+" kg"},{Campo:"Obiettivo",Valore:p.goal},{Campo:"Allergie",Valore:p.allergies||""},{Campo:"Nutrizionista",Valore:p.nutri?.name||""},{Campo:"Tel",Valore:p.nutri?.phone||""},{Campo:"Email",Valore:p.nutri?.email||""}];
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(prof),"Profilo");
@@ -287,6 +316,21 @@ function App(){
         {data.measurements.length===0?<div className="text-center py-3 opacity-30 font-semibold">—</div>:<><div className="grid grid-cols-2 gap-2">{BP.map(part=>{const vs=data.measurements.filter(m=>m[part]).map(m=>({date:m.date,value:parseFloat(m[part])}));if(!vs.length)return null;return<div key={part} className="rounded-xl p-2" style={{background:"var(--m)"}}><Chrt data={vs.slice(-5)} w={140} h={80} color="var(--sage)" label={part} unit="cm"/></div>;})}</div>
           <div className="mt-3 space-y-1">{data.measurements.slice().reverse().slice(0,5).map((m,i)=>{const idx=data.measurements.length-1-i;return(<div key={m.id} className="flex items-center justify-between py-1.5 px-2 rounded-lg text-sm" style={{background:i%2===0?"var(--m)":"transparent"}}><span style={{color:"var(--tx2)"}}>{m.date}</span><span className="text-xs font-bold truncate flex-1 mx-2" style={{color:"var(--tx2)"}}>{BP.filter(p=>m[p]).map(p=>p[0]+":"+m[p]).join(" ")}</span><div className="flex gap-1 flex-shrink-0"><button onClick={()=>{setFs({midx:idx,date:m.date,...Object.fromEntries(BP.map(p=>[p,m[p]||""]))});setModal("editM");}} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{background:"var(--bd)"}}><Ic d={ic.edit} s={11}/></button><button onClick={()=>{if(confirm("Eliminare?"))up(d=>{d.measurements.splice(idx,1);});}} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{background:"var(--bd)"}}><Ic d={ic.del} s={11}/></button></div></div>);})}</div></>}
       </div>
+      {/* ── BIA Section ── */}
+      <div className="card"><div className="flex items-center justify-between mb-3"><span className="font-extrabold">🔬 BIA (Bioimpedenziometria)</span><button onClick={()=>{setFs({biaDate:td(),...Object.fromEntries(BIA_F.map(f=>[f.k,""]))});setModal("addBia");}} className="w-8 h-8 rounded-xl flex items-center justify-center" style={{background:"var(--ac)"}}><Ic d={ic.plus} s={14} c="#fff"/></button></div>
+        {(data.biaLog||[]).length===0?<div className="text-center py-4 opacity-30"><p className="font-semibold mb-2">Nessun esame BIA registrato</p><p className="text-xs" style={{color:"var(--tx2)"}}>Aggiungi i dati della tua BIA AKERN</p></div>:(()=>{
+          const last=(data.biaLog||[])[(data.biaLog||[]).length-1];const prev2=(data.biaLog||[]).length>=2?(data.biaLog||[])[(data.biaLog||[]).length-2]:null;
+          return(<div className="space-y-3">
+            <div className="text-xs font-bold" style={{color:"var(--tx2)"}}>Ultimo esame: {last.date}</div>
+            {/* Summary cards */}
+            <div className="grid grid-cols-2 gap-2">{BIA_SUMMARY.map(k=>{const f=BIA_F.find(x=>x.k===k);if(!f||!last[k])return null;const delta=prev2&&prev2[k]?(parseFloat(last[k])-parseFloat(prev2[k])).toFixed(1):null;return(<div key={k} className="rounded-xl p-2.5" style={{background:"var(--m)"}}><div className="flex items-center gap-1.5 mb-0.5"><span className="text-xs">{f.icon}</span><span className="text-[10px] font-bold" style={{color:"var(--tx2)"}}>{f.l}</span></div><div className="flex items-baseline gap-1"><span className="text-lg font-black" style={{color:f.c}}>{last[k]}</span><span className="text-[10px] font-bold" style={{color:"var(--tx2)"}}>{f.u}</span>{delta&&<span className="text-[10px] font-black ml-auto" style={{color:parseFloat(delta)>0?(k.includes("Grassa")?"var(--er)":"var(--ok)"):(k.includes("Grassa")?"var(--ok)":"var(--er)")}}>{parseFloat(delta)>0?"+":""}{delta}</span>}</div></div>);})}</div>
+            {/* BIA trend charts */}
+            <div className="grid grid-cols-2 gap-2">{BIA_CHARTS.map(k=>{const f=BIA_F.find(x=>x.k===k);if(!f)return null;const vs=(data.biaLog||[]).filter(b=>b[k]).map(b=>({date:b.date,value:parseFloat(b[k])}));if(vs.length<1)return null;return<div key={k} className="rounded-xl p-2" style={{background:"var(--m)"}}><Chrt data={vs.slice(-6)} w={140} h={80} color={f.c} label={f.l} unit={f.u==="kg"?" kg":f.u==="%"?"%":""}/></div>;})}</div>
+            {/* BIA history */}
+            <div className="space-y-1">{(data.biaLog||[]).slice().reverse().slice(0,5).map((b,i)=>{const idx=(data.biaLog||[]).length-1-i;return(<div key={idx} className="flex items-center justify-between py-1.5 px-2 rounded-lg text-sm" style={{background:i%2===0?"var(--m)":"transparent"}}><span style={{color:"var(--tx2)"}}>{b.date}</span><span className="text-xs font-bold truncate flex-1 mx-2" style={{color:"var(--tx2)"}}>MG:{b.massaGrassa||"—"} MM:{b.massaMagra||"—"} AF:{b.angoloFase||"—"}°</span><div className="flex gap-1 flex-shrink-0"><button onClick={()=>{setFs({biaIdx:idx,biaDate:b.date,...Object.fromEntries(BIA_F.map(f=>[f.k,b[f.k]||""]))});setModal("editBia");}} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{background:"var(--bd)"}}><Ic d={ic.edit} s={11}/></button><button onClick={()=>{if(confirm("Eliminare?"))up(d=>{(d.biaLog||[]).splice(idx,1);});}} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{background:"var(--bd)"}}><Ic d={ic.del} s={11}/></button></div></div>);})}</div>
+          </div>);
+        })()}
+      </div>
     </div>);
   };
 
@@ -333,6 +377,31 @@ function App(){
     <Mdl open={modal==="editW"} onClose={()=>setModal(null)} title="✏️ Peso"><Inp label="Data" type="date" value={fs.date||""} onChange={e=>setFs({...fs,date:e.target.value})}/><Inp label="Peso (kg)" type="number" step="0.1" value={fs.value||""} onChange={e=>setFs({...fs,value:e.target.value})}/><Btn cls="w-full" onClick={()=>{if(!fs.value)return;up(d=>{d.weightLog[fs.eidx]={date:fs.date,value:parseFloat(fs.value)};d.weightLog.sort((a,b)=>a.date.localeCompare(b.date));});setModal(null);}}>Salva</Btn></Mdl>
     <Mdl open={modal==="addM"} onClose={()=>setModal(null)} title="📏 Misurazioni"><Inp label="Data" type="date" value={fs.date||""} onChange={e=>setFs({...fs,date:e.target.value})}/>{BP.map(p=><Inp key={p} label={p+" (cm)"} type="number" step="0.1" value={fs[p]||""} onChange={e=>setFs({...fs,[p]:e.target.value})}/>)}<Btn cls="w-full" onClick={()=>{const en={id:gid(),date:fs.date};BP.forEach(p=>{if(fs[p])en[p]=fs[p];});up(d=>{d.measurements.push(en);d.measurements.sort((a,b)=>a.date.localeCompare(b.date));});setModal(null);}}>Salva</Btn></Mdl>
     <Mdl open={modal==="editM"} onClose={()=>setModal(null)} title="✏️ Misurazioni"><Inp label="Data" type="date" value={fs.date||""} onChange={e=>setFs({...fs,date:e.target.value})}/>{BP.map(p=><Inp key={p} label={p+" (cm)"} type="number" step="0.1" value={fs[p]||""} onChange={e=>setFs({...fs,[p]:e.target.value})}/>)}<Btn cls="w-full" onClick={()=>{const en={id:data.measurements[fs.midx].id,date:fs.date};BP.forEach(p=>{if(fs[p])en[p]=fs[p];});up(d=>{d.measurements[fs.midx]=en;d.measurements.sort((a,b)=>a.date.localeCompare(b.date));});setModal(null);}}>Salva</Btn></Mdl>
+    {/* BIA modals */}
+    <Mdl open={modal==="addBia"} onClose={()=>setModal(null)} title="🔬 Nuova BIA">
+      <div className="space-y-1">
+        <Inp label="Data esame" type="date" value={fs.biaDate||""} onChange={e=>setFs({...fs,biaDate:e.target.value})}/>
+        <div className="text-xs font-black tracking-wider py-1" style={{color:"var(--tx2)"}}>COMPOSIZIONE CORPOREA</div>
+        {BIA_F.filter(f=>!f.k.includes("Pct")&&!["resistenza","reattanza","naK","bmrBia","bmiBia","bcmi"].includes(f.k)).map(f=><Inp key={f.k} label={f.icon+" "+f.l+" ("+f.u+")"} type="number" step="0.1" value={fs[f.k]||""} onChange={e=>setFs({...fs,[f.k]:e.target.value})}/>)}
+        <div className="text-xs font-black tracking-wider py-1" style={{color:"var(--tx2)"}}>PERCENTUALI</div>
+        {BIA_F.filter(f=>f.k.includes("Pct")).map(f=><Inp key={f.k} label={f.icon+" "+f.l} type="number" step="0.1" value={fs[f.k]||""} onChange={e=>setFs({...fs,[f.k]:e.target.value})}/>)}
+        <div className="text-xs font-black tracking-wider py-1" style={{color:"var(--tx2)"}}>PARAMETRI</div>
+        {BIA_F.filter(f=>["resistenza","reattanza","naK","bmrBia","bmiBia","bcmi","angoloFase"].includes(f.k)&&!f.k.includes("angolo")).map(f=><Inp key={f.k} label={f.icon+" "+f.l+(f.u?" ("+f.u+")":"")} type="number" step="0.1" value={fs[f.k]||""} onChange={e=>setFs({...fs,[f.k]:e.target.value})}/>)}
+        <Btn cls="w-full mt-2" v="success" onClick={()=>{const en={date:fs.biaDate};BIA_F.forEach(f=>{if(fs[f.k])en[f.k]=fs[f.k];});up(d=>{if(!d.biaLog)d.biaLog=[];d.biaLog.push(en);d.biaLog.sort((a,b)=>a.date.localeCompare(b.date));});setModal(null);}}>💾 Salva BIA</Btn>
+      </div>
+    </Mdl>
+    <Mdl open={modal==="editBia"} onClose={()=>setModal(null)} title="✏️ Modifica BIA">
+      <div className="space-y-1">
+        <Inp label="Data esame" type="date" value={fs.biaDate||""} onChange={e=>setFs({...fs,biaDate:e.target.value})}/>
+        <div className="text-xs font-black tracking-wider py-1" style={{color:"var(--tx2)"}}>COMPOSIZIONE CORPOREA</div>
+        {BIA_F.filter(f=>!f.k.includes("Pct")&&!["resistenza","reattanza","naK","bmrBia","bmiBia","bcmi"].includes(f.k)).map(f=><Inp key={f.k} label={f.icon+" "+f.l+" ("+f.u+")"} type="number" step="0.1" value={fs[f.k]||""} onChange={e=>setFs({...fs,[f.k]:e.target.value})}/>)}
+        <div className="text-xs font-black tracking-wider py-1" style={{color:"var(--tx2)"}}>PERCENTUALI</div>
+        {BIA_F.filter(f=>f.k.includes("Pct")).map(f=><Inp key={f.k} label={f.icon+" "+f.l} type="number" step="0.1" value={fs[f.k]||""} onChange={e=>setFs({...fs,[f.k]:e.target.value})}/>)}
+        <div className="text-xs font-black tracking-wider py-1" style={{color:"var(--tx2)"}}>PARAMETRI</div>
+        {BIA_F.filter(f=>["resistenza","reattanza","naK","bmrBia","bmiBia","bcmi","angoloFase"].includes(f.k)&&!f.k.includes("angolo")).map(f=><Inp key={f.k} label={f.icon+" "+f.l+(f.u?" ("+f.u+")":"")} type="number" step="0.1" value={fs[f.k]||""} onChange={e=>setFs({...fs,[f.k]:e.target.value})}/>)}
+        <Btn cls="w-full mt-2" v="success" onClick={()=>{const en={date:fs.biaDate};BIA_F.forEach(f=>{if(fs[f.k])en[f.k]=fs[f.k];});up(d=>{if(!d.biaLog)d.biaLog=[];d.biaLog[fs.biaIdx]=en;d.biaLog.sort((a,b)=>a.date.localeCompare(b.date));});setModal(null);}}>💾 Salva</Btn>
+      </div>
+    </Mdl>
     <Mdl open={modal==="addA"} onClose={()=>setModal(null)} title="🏃 Attività"><Inp label="Data" type="date" value={fs.date||""} onChange={e=>setFs({...fs,date:e.target.value})}/><Inp label="Attività" value={fs.activity||""} onChange={e=>setFs({...fs,activity:e.target.value})} placeholder="Camminata"/><Inp label="Durata (min)" type="number" value={fs.duration||""} onChange={e=>setFs({...fs,duration:e.target.value})}/><Btn cls="w-full" onClick={()=>{if(!fs.activity)return;up(d=>{d.activities.push({id:gid(),date:fs.date,activity:fs.activity,duration:fs.duration||"0"});});setModal(null);}}>Salva</Btn></Mdl>
     <Mdl open={modal==="editNutri"} onClose={()=>setModal(null)} title="🩺 Nutrizionista"><Inp label="Nome" value={fs.nN||""} onChange={e=>setFs({...fs,nN:e.target.value})} placeholder="Dott. Mario Rossi"/><Inp label="Telefono" value={fs.nP||""} onChange={e=>setFs({...fs,nP:e.target.value})} placeholder="+39 333 1234567" type="tel"/><Inp label="Email" value={fs.nE||""} onChange={e=>setFs({...fs,nE:e.target.value})} placeholder="email@esempio.it"/><Inp label="Indirizzo" value={fs.nA||""} onChange={e=>setFs({...fs,nA:e.target.value})} placeholder="Via Roma 10, Napoli"/><Inp label="Prossimo appuntamento" type="date" value={fs.nD||""} onChange={e=>setFs({...fs,nD:e.target.value})}/><label className="block mb-4"><span className="text-sm font-bold mb-1 block" style={{color:"var(--tx2)"}}>Note</span><textarea className="w-full rounded-xl px-4 py-3 h-16 resize-none outline-none" style={{background:"var(--m)",border:"2px solid var(--bd)",fontSize:"16px"}} value={fs.nO||""} onChange={e=>setFs({...fs,nO:e.target.value})}/></label><Btn cls="w-full" onClick={()=>{up(d=>{d.profile.nutri={name:fs.nN||"",phone:fs.nP||"",email:fs.nE||"",address:fs.nA||"",nextAppt:fs.nD||"",notes:fs.nO||""};});setModal(null);}}>Salva</Btn></Mdl>
     <Mdl open={modal==="diary"} onClose={()=>setModal(null)} title="📝 Diario"><textarea className="w-full rounded-xl px-4 py-3 h-28 resize-none outline-none" style={{background:"var(--m)",border:"1px solid var(--bd)",fontSize:"16px"}} value={fs.note||""} onChange={e=>setFs({...fs,note:e.target.value})} placeholder="Come ti senti?"/><Btn cls="w-full mt-3" onClick={()=>{up(d=>{d.diary[fs.date]=fs.note;});setModal(null);}}>Salva</Btn></Mdl>
